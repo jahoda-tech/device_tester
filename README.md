@@ -15,7 +15,7 @@ Go service that just shows what data is created at device
 
 ## Usage
 Use proper binary
-Example of connecting to device with port 192.168.34.32: ```./device_tester -p 192.168.34.32```
+Example of connecting to device with port 192.168.34.32:<br> ```./device_tester -p 192.168.34.32```
 
 © 2022 Petr Jahoda
 
