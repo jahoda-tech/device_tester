@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"github.com/TwiN/go-color"
 	"github.com/kardianos/service"
+	"go.uber.org/automaxprocs/maxprocs"
 	"net"
-	"strconv"
+	"path"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -17,15 +20,17 @@ const serviceName = "Device Tester"
 const serviceDescription = "Downloads data from devices using sockets"
 
 var (
-	serviceIsRunning = false
 	serviceSync      sync.Mutex
+	serviceIsRunning = false
 )
 
 type program struct{}
 
 func main() {
-	fmt.Println(color.Ize(color.Green, "INF [MAIN] "+serviceName+" ["+version+"] starting..."))
-	fmt.Println(color.Ize(color.Green, "INF [MAIN] © "+strconv.Itoa(time.Now().Year())+" Petr Jahoda"))
+	maxprocs.Set()
+	functionName := getFunctionName()
+	fmt.Println(color.Green, "INF", functionName, serviceName, version, "starting...", color.Reset)
+	fmt.Println(color.Green, "INF", functionName, "©", time.Now().Year(), "Petr Jahoda", color.Reset)
 	serviceConfig := &service.Config{
 		Name:        serviceName,
 		DisplayName: serviceName,
@@ -34,15 +39,16 @@ func main() {
 	prg := &program{}
 	s, err := service.New(prg, serviceConfig)
 	if err != nil {
-		fmt.Println(color.Ize(color.Red, "ERR [MAIN] Cannot start: "+err.Error()))
+		fmt.Println(color.Red, "ERR", functionName, err.Error(), color.Reset)
 	}
 	err = s.Run()
 	if err != nil {
-		fmt.Println(color.Ize(color.Red, "ERR [MAIN] Cannot start: "+err.Error()))
+		fmt.Println(color.Red, "ERR", functionName, err.Error(), color.Reset)
 	}
 }
 func (p *program) Start(service.Service) error {
-	fmt.Println(color.Ize(color.Green, "INF [MAIN] "+serviceName+" ["+version+"] started"))
+	functionName := getFunctionName()
+	fmt.Println(color.Green, "INF", functionName, serviceName, version, "started", color.Reset)
 	go p.run()
 	serviceSync.Lock()
 	serviceIsRunning = true
@@ -54,11 +60,14 @@ func (p *program) Stop(service.Service) error {
 	serviceSync.Lock()
 	serviceIsRunning = false
 	serviceSync.Unlock()
-	fmt.Println(color.Ize(color.Green, "INF [MAIN] "+serviceName+" ["+version+"] stopped"))
+	functionName := getFunctionName()
+	fmt.Println(color.Green, "INF", functionName, serviceName, version, "stopped", color.Reset)
 	return nil
 }
 
 func (p *program) run() {
+	functionName := getFunctionName()
+	fmt.Println(color.Green, "INF", functionName, "started", color.Reset)
 	var deviceIpAddress string
 	flag.StringVar(&deviceIpAddress, "ip", "192.168.0.1", "port number")
 	flag.Parse()
@@ -67,19 +76,19 @@ func (p *program) run() {
 		dialer := net.Dialer{Timeout: 5 * time.Second}
 		conn, err := dialer.Dial("tcp", deviceIpAddress)
 		if err != nil {
-			fmt.Println(color.Ize(color.Red, "ERR ["+deviceIpAddress+"] Problem opening socket connection: "+err.Error()))
+			fmt.Println(color.Red, "ERR", functionName, deviceIpAddress, err.Error(), color.Reset)
 			serviceSync.Lock()
 			serviceNowRunning := serviceIsRunning
 			serviceSync.Unlock()
 			if !serviceNowRunning {
-				fmt.Println(color.Ize(color.Green, "INF ["+deviceIpAddress+"] Communication ended, service is ending"))
+				fmt.Println(color.Green, "INF", functionName, deviceIpAddress, "Communication ended, service is ending", color.Reset)
 			}
 			break
 		}
-		fmt.Println(color.Ize(color.Green, "INF ["+deviceIpAddress+"] Socket connection with device opened"))
+		fmt.Println(color.Green, "INF", functionName, deviceIpAddress, "Socket connection with device opened", color.Reset)
 		_, err = fmt.Fprintf(conn, time.Now().UTC().Format("2006-01-02;15:04:05")+"%\n")
 		if err != nil {
-			fmt.Println(color.Ize(color.Red, "ERR ["+deviceIpAddress+"] Error sending date to device"))
+			fmt.Println(color.Red, "ERR", functionName, deviceIpAddress, "Error sending date to device", color.Reset)
 			conn.Close()
 			break
 		}
@@ -87,7 +96,7 @@ func (p *program) run() {
 			_ = conn.SetReadDeadline(time.Now().Add(15 * time.Second))
 			message, err := bufio.NewReader(conn).ReadString('\n')
 			if err != nil {
-				fmt.Println(color.Ize(color.Green, "INF ["+deviceIpAddress+"] Communication ended, problem reading data from device"))
+				fmt.Println(color.Green, "INF", functionName, deviceIpAddress, "Communication ended, problem reading data from device", color.Reset)
 				conn.Close()
 				break
 			}
@@ -96,10 +105,18 @@ func (p *program) run() {
 			serviceNowRunning := serviceIsRunning
 			serviceSync.Unlock()
 			if !serviceNowRunning {
-				fmt.Println(color.Ize(color.Green, "INF ["+deviceIpAddress+"] Communication ended, service is ending"))
+				fmt.Println(color.Green, "INF", functionName, deviceIpAddress, "Communication ended, service is ending", color.Reset)
 				conn.Close()
 				break
 			}
 		}
 	}
+}
+
+func getFunctionName() string {
+	pc, file, _, _ := runtime.Caller(1)
+	wholeFuncName := runtime.FuncForPC(pc).Name()
+	funcName := strings.Split(wholeFuncName, ".")[1]
+	fileName := path.Base(file)
+	return fmt.Sprintf("%s >> %s:", fileName, funcName)
 }
